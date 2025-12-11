@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "178071420146",
+    "project_id": "fincanim-5867a",
+    "storage_bucket": "fincanim-5867a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:178071420146:android:cebac1895f2b98e6b9a46b",
+        "android_client_info": {
+          "package_name": "com.dynamicstudios.fincanim"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "178071420146-kc2408jc9ee9mka6rtvpcc4o462fcqo4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dynamicstudios.fincanim",
+            "certificate_hash": "edb7b967e83c71801b19063183ae095e3d4747fa"
+          }
+        },
+        {
+          "client_id": "178071420146-p4ivrhdnnseajrgpjav1f2s0d6ahtj6g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnzT1iVTd0ITTgXntRssNvuPvTgCtC3Zw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "178071420146-p4ivrhdnnseajrgpjav1f2s0d6ahtj6g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
