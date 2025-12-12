@@ -470,6 +470,57 @@ class PremiumService {
     }
   }
 
+  /// Get time elapsed since last fortune reading
+  Future<int> getSecondsSinceLastFortune() async {
+    try {
+      if (_userId == null) return 999999;
+
+      final doc = await _firestore.collection('Users').doc(_userId).get();
+
+      if (!doc.exists) return 999999;
+
+      final data = doc.data() ?? {};
+      final lastReadTimestamp = data['lastFortuneReadAt'] as Timestamp?;
+
+      if (lastReadTimestamp == null) return 999999;
+
+      final lastReadTime = lastReadTimestamp.toDate();
+      final now = DateTime.now();
+      final elapsed = now.difference(lastReadTime).inSeconds;
+
+      return elapsed;
+    } catch (e) {
+      print('Error getting last fortune time: $e');
+      return 999999; // Allow if error
+    }
+  }
+
+  /// Check if enough time has passed since last fortune reading (60 seconds)
+  Future<bool> canReadFortuneByTime() async {
+    final elapsed = await getSecondsSinceLastFortune();
+    return elapsed >= 60;
+  }
+
+  /// Get remaining seconds until next fortune reading is allowed
+  Future<int> getSecondsUntilNextFortune() async {
+    final elapsed = await getSecondsSinceLastFortune();
+    final remaining = 60 - elapsed;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /// Update last fortune reading time to now
+  Future<void> updateLastFortuneReadTime() async {
+    try {
+      if (_userId == null) return;
+
+      await _firestore.collection('Users').doc(_userId).set({
+        'lastFortuneReadAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('Error updating last fortune time: $e');
+    }
+  }
+
   /// Get usage details
   Future<UsageModel?> _getUsage() async {
     if (_userId == null) return null;

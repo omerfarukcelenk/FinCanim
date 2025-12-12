@@ -14,7 +14,7 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
   final HiveHelper _hive = HiveHelper();
   // Controllers owned by the viewmodel so UI doesn't manage lifecycle
   final TextEditingController nameController = TextEditingController();
-  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
   final TextEditingController ageController = TextEditingController();
 
   SettingsViewmodel() : super(SettingsState.initial()) {
@@ -28,7 +28,6 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
   /// Convenience method to trigger save from UI code.
   void saveSettings({
     required String name,
-    required String phoneNumber,
     required String age,
     required String gender,
     required String maritalStatus,
@@ -36,7 +35,6 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
     add(
       SettingsSaveEvent(
         name: name,
-        phoneNumber: phoneNumber,
         age: age,
         gender: gender,
         maritalStatus: maritalStatus,
@@ -61,22 +59,22 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
         if (doc.exists) {
           final data = doc.data() ?? {};
           final displayName = data['displayName'] ?? '';
-          final phone = data['phoneNumber'] ?? currentUser.phoneNumber ?? '';
+          final email = currentUser.email ?? '';
           final age = data['age']?.toString() ?? '';
           final gender = data['gender'] ?? 'Erkek';
           final maritalStatus = data['maritalStatus'] ?? 'Bekar';
 
           // populate controllers with Firestore values
           nameController.text = displayName;
-          phoneController.text = phone;
+          emailController.text = email;
           ageController.text = age;
 
           // Create UserModel from Firestore data
           final user = UserModel(
             uid: currentUser.uid,
-            email: currentUser.email ?? '',
+            email: email,
             displayName: displayName,
-            phoneNumber: phone,
+            phoneNumber: '',
             age: int.tryParse(age),
             gender: gender,
             maritalStatus: maritalStatus,
@@ -86,7 +84,7 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
             state.copyWith(
               loading: false,
               name: displayName,
-              phoneNumber: phone,
+              email: email,
               age: age,
               gender: gender,
               maritalStatus: maritalStatus,
@@ -98,7 +96,7 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
           emit(
             state.copyWith(
               loading: false,
-              phoneNumber: currentUser.phoneNumber ?? '',
+              email: currentUser.email ?? '',
               gender: 'Erkek',
               maritalStatus: 'Bekar',
             ),
@@ -136,7 +134,6 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
 
         // Update local controllers
         nameController.text = event.name;
-        phoneController.text = event.phoneNumber;
         ageController.text = event.age;
 
         // Update state
@@ -144,7 +141,6 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
           state.copyWith(
             saving: false,
             name: event.name,
-            phoneNumber: event.phoneNumber,
             age: event.age,
             gender: event.gender,
             maritalStatus: event.maritalStatus,
@@ -160,7 +156,7 @@ class SettingsViewmodel extends Bloc<SettingsEvent, SettingsState> {
   @override
   Future<void> close() {
     nameController.dispose();
-    phoneController.dispose();
+    emailController.dispose();
     ageController.dispose();
     return super.close();
   }

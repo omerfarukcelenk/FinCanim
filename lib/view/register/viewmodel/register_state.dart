@@ -4,26 +4,44 @@ enum RegisterStatus { initial, loading, success, failure }
 
 class RegisterState {
   final String name;
-  final String phone;
+  final String email;
+  final String password;
+  final String passwordConfirm;
   final String gender;
   final String maritalStatus;
   final int? age;
   final RegisterStatus status;
   final String? errorMessage;
 
-  RegisterState({
-    this.name = '',
-    this.phone = '',
-    this.gender = '',
-    this.maritalStatus = '',
+  const RegisterState({
+    required this.name,
+    required this.email,
+    required this.password,
+    required this.passwordConfirm,
+    required this.gender,
+    required this.maritalStatus,
     this.age,
-    this.status = RegisterStatus.initial,
+    required this.status,
     this.errorMessage,
   });
 
+  factory RegisterState.initial() => const RegisterState(
+    name: '',
+    email: '',
+    password: '',
+    passwordConfirm: '',
+    gender: '',
+    maritalStatus: '',
+    age: null,
+    status: RegisterStatus.initial,
+    errorMessage: null,
+  );
+
   RegisterState copyWith({
     String? name,
-    String? phone,
+    String? email,
+    String? password,
+    String? passwordConfirm,
     String? gender,
     String? maritalStatus,
     int? age,
@@ -32,7 +50,9 @@ class RegisterState {
   }) {
     return RegisterState(
       name: name ?? this.name,
-      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      password: password ?? this.password,
+      passwordConfirm: passwordConfirm ?? this.passwordConfirm,
       gender: gender ?? this.gender,
       maritalStatus: maritalStatus ?? this.maritalStatus,
       age: age ?? this.age,

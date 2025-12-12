@@ -1,3 +1,7 @@
+plugins {
+    id("com.onesignal.androidsdk.onesignal-gradle-plugin") version "0.14.0" apply false
+}
+
 allprojects {
     repositories {
         google()

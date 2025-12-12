@@ -10,7 +10,6 @@ import 'package:falcim_benim/view/login/widgets/login_input.dart';
 import 'package:falcim_benim/view/login/widgets/login_top_icon.dart';
 import 'package:falcim_benim/view/login/widgets/primary_gradient_button.dart';
 import 'package:flutter/material.dart';
-import 'package:falcim_benim/view/otp/otp_screen.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:falcim_benim/utils/toast_helper.dart';
 
@@ -38,6 +37,7 @@ class LoginScreen extends StatelessWidget {
             }
           },
           child: BlocBuilder<LoginViewModel, LoginState>(
+            buildWhen: (previous, current) => true,
             builder: (context, state) {
               final loading = state.status == LoginStatus.loading;
               return Container(
@@ -85,50 +85,51 @@ class LoginScreen extends StatelessWidget {
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     const SizedBox(height: 8),
+                                    // Email input
                                     LoginInput(
-                                      label: AppLocalizations.of(
-                                        context,
-                                      )!.phoneLabel,
-                                      hint: AppLocalizations.of(
-                                        context,
-                                      )!.phoneHint,
-                                      initialValue: state.phone,
-                                      keyboardType: TextInputType.phone,
+                                      label: 'Email',
+                                      hint: 'user@example.com',
+                                      initialValue: state.email,
+                                      keyboardType: TextInputType.emailAddress,
                                       onChanged: (v) => context
                                           .read<LoginViewModel>()
-                                          .add(UpdatePhoneEvent(v)),
+                                          .add(UpdateEmailEvent(v)),
                                     ),
                                     const SizedBox(height: 16),
+                                    // Password input
+                                    LoginInput(
+                                      label: 'Şifre',
+                                      hint: '••••••••',
+                                      initialValue: state.password,
+                                      obscure: true,
+                                      onChanged: (v) => context
+                                          .read<LoginViewModel>()
+                                          .add(UpdatePasswordEvent(v)),
+                                    ),
+                                    const SizedBox(height: 18),
                                     PrimaryGradientButton(
                                       onPressed: loading
                                           ? null
-                                          : () async {
-                                              final phone = state.phone.trim();
-                                              if (phone.isEmpty) {
+                                          : () {
+                                              final email = state.email.trim();
+                                              final password = state.password;
+
+                                              if (email.isEmpty) {
                                                 ToastHelper.showError(
-                                                  AppLocalizations.of(
-                                                    context,
-                                                  )!.phoneRequired,
+                                                  'Lütfen e-posta girin',
                                                 );
                                                 return;
                                               }
-                                              final ok =
-                                                  await Navigator.of(
-                                                    context,
-                                                  ).push<bool?>(
-                                                    MaterialPageRoute(
-                                                      builder: (_) => OtpScreen(
-                                                        initialPhone: phone,
-                                                      ),
-                                                    ),
-                                                  );
-                                              if (ok == true) {
-                                                context
-                                                    .read<LoginViewModel>()
-                                                    .add(
-                                                      SignInCompletedEvent(),
-                                                    );
+                                              if (password.isEmpty) {
+                                                ToastHelper.showError(
+                                                  'Lütfen şifre girin',
+                                                );
+                                                return;
                                               }
+
+                                              context
+                                                  .read<LoginViewModel>()
+                                                  .add(SignInCompletedEvent());
                                             },
                                       loading: loading,
                                       label: AppLocalizations.of(

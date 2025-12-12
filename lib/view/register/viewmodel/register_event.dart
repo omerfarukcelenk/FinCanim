@@ -9,6 +9,21 @@ class UpdateNameEvent extends RegisterEvent {
   UpdateNameEvent(this.name);
 }
 
+class UpdateEmailEvent extends RegisterEvent {
+  final String email;
+  UpdateEmailEvent(this.email);
+}
+
+class UpdatePasswordEvent extends RegisterEvent {
+  final String password;
+  UpdatePasswordEvent(this.password);
+}
+
+class UpdatePasswordConfirmEvent extends RegisterEvent {
+  final String passwordConfirm;
+  UpdatePasswordConfirmEvent(this.passwordConfirm);
+}
+
 class UpdateGenderEvent extends RegisterEvent {
   final String gender;
   UpdateGenderEvent(this.gender);
@@ -22,11 +37,6 @@ class UpdateMaritalStatusEvent extends RegisterEvent {
 class UpdateAgeEvent extends RegisterEvent {
   final int? age;
   UpdateAgeEvent(this.age);
-}
-
-class UpdatePhoneEvent extends RegisterEvent {
-  final String phone;
-  UpdatePhoneEvent(this.phone);
 }
 
 class SignUpCompletedEvent extends RegisterEvent {}

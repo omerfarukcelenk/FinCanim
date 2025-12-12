@@ -16,12 +16,17 @@ import 'widgets/detail_actions.dart';
 
 @RoutePage()
 class DetailScreen extends StatelessWidget {
-  final int index;
-  const DetailScreen({super.key, required this.index});
+  final int? index;
+  final String? fortuneId;
+
+  const DetailScreen({super.key, this.index, this.fortuneId});
 
   @override
   Widget build(BuildContext context) {
     ResponsiveSize.init(context);
+
+    // Use index or default to 0
+    int displayIndex = index ?? 0;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -74,7 +79,7 @@ class DetailScreen extends StatelessWidget {
                       if (state is DetailInitial) {
                         // dispatch load and show loader while loading
                         context.read<DetailViewmodel>().add(
-                          DetailLoadEvent(index: index),
+                          DetailLoadEvent(index: displayIndex),
                         );
                         return const Center(child: CircularProgressIndicator());
                       }
@@ -98,7 +103,7 @@ class DetailScreen extends StatelessWidget {
 
                             // Tabs for categorized reading
                             DefaultTabController(
-                              length: 8,
+                              length: 7,
                               child: Expanded(
                                 child: Column(
                                   crossAxisAlignment:

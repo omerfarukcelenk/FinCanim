@@ -4,9 +4,14 @@ abstract class LoginEvent {}
 
 class LoginInitialEvent extends LoginEvent {}
 
-class UpdatePhoneEvent extends LoginEvent {
-  final String phone;
-  UpdatePhoneEvent(this.phone);
+class UpdateEmailEvent extends LoginEvent {
+  final String email;
+  UpdateEmailEvent(this.email);
+}
+
+class UpdatePasswordEvent extends LoginEvent {
+  final String password;
+  UpdatePasswordEvent(this.password);
 }
 
 class SignInCompletedEvent extends LoginEvent {}

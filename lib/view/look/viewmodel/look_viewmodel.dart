@@ -5,6 +5,8 @@ import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:falcim_benim/data/models/user_model.dart';
 import 'package:falcim_benim/services/firebase_auth_service.dart';
 import 'package:falcim_benim/services/fortune_service.dart';
+import 'package:falcim_benim/services/local_notification_service.dart';
+import 'package:falcim_benim/services/onesignal_service.dart';
 import 'package:falcim_benim/utils/toast_helper.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -16,14 +18,15 @@ import 'package:uuid/uuid.dart';
 import 'package:falcim_benim/view/look/viewmodel/look_state.dart';
 import 'package:falcim_benim/utils/logger.dart';
 import 'package:falcim_benim/data/local/hive_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:falcim_benim/services/firestore_service.dart';
 import 'package:falcim_benim/data/models/coffee_reading_model.dart';
+import 'package:falcim_benim/routes/app_router.dart';
 
 class LookViewmodel extends Bloc<LookEvent, LookState> {
   final ImagePicker _picker = ImagePicker();
   final HiveHelper _hive = HiveHelper();
+  late final AppRouter _appRouter;
 
   LookViewmodel() : super(const LookInitial()) {
     on<SelectPhotoEvent>(_onSelectPhoto);
@@ -31,6 +34,11 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
     // Use droppable transformer so repeated SaveReadingEvent (e.g., double taps)
     // are ignored while one is being processed.
     on<SaveReadingEvent>(_onSaveReading, transformer: droppable());
+  }
+
+  /// Set app router for navigation
+  void setAppRouter(AppRouter router) {
+    _appRouter = router;
   }
 
   FortuneService fortuneService = FortuneService();
@@ -124,11 +132,112 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
     }
   }
 
+  /// Poll fortune status from queue until complete
+  Future<String?> _pollFortuneStatus(
+    String requestId,
+    Emitter<LookState> emit,
+  ) async {
+    const Duration pollInterval = Duration(seconds: 5);
+    const int maxPolls = 720; // 60 minutes max
+    int pollCount = 0;
+
+    Logger.info(
+      'Starting fortune status polling... (max ${maxPolls * 5}s)',
+      tag: 'LOOK',
+    );
+
+    while (pollCount < maxPolls) {
+      pollCount++;
+
+      try {
+        // TRIGGER queue processing before checking status
+        try {
+          await fortuneService.triggerQueueProcessing();
+        } catch (e) {
+          Logger.debug('Queue trigger failed (non-critical): $e', tag: 'LOOK');
+          // Continue - it's okay if queue trigger fails
+        }
+
+        // Check status
+        final statusResponse = await fortuneService.checkFortuneStatus(
+          requestId,
+        );
+
+        if (statusResponse['success'] == true) {
+          final status = statusResponse['status'];
+
+          if (status == 'completed') {
+            final fortune = statusResponse['fortune'];
+            if (fortune == null || fortune.toString().isEmpty) {
+              throw Exception('Fortune text is empty');
+            }
+            Logger.success(
+              '✅ Fortune ready after ${pollCount * 5} seconds!',
+              tag: 'LOOK',
+            );
+            return fortune.toString();
+          } else if (status == 'pending' || status == 'processing') {
+            final position = statusResponse['queue_position'] ?? pollCount;
+            final estimatedWait =
+                statusResponse['estimated_wait'] ?? (pollCount * 5);
+
+            Logger.info(
+              '⏳ Processing... Position: $position, Wait: ~${estimatedWait}s',
+              tag: 'LOOK',
+            );
+
+            // Show UI update (optional - emit custom state if needed)
+            emit(LookUploading()); // Reuse uploading state for waiting
+
+            // Wait before next poll
+            await Future.delayed(pollInterval);
+          }
+        } else if (statusResponse['rate_limited'] == true) {
+          throw Exception('Rate limited');
+        } else {
+          throw Exception(statusResponse['message'] ?? 'Status check failed');
+        }
+      } catch (e) {
+        Logger.error('Poll error: $e', tag: 'LOOK');
+        // Continue polling even if single request fails
+        await Future.delayed(pollInterval);
+      }
+    }
+
+    throw Exception('Fortune processing timeout (60 minutes exceeded)');
+  }
+
   Future<void> _onSaveReading(
     SaveReadingEvent event,
     Emitter<LookState> emit,
   ) async {
     try {
+      final premiumService = PremiumService();
+
+      // Check remaining fortune reading rights
+      final remainingRights = await premiumService.getRemainingFortuneCount();
+
+      if (remainingRights <= 0) {
+        emit(
+          const LookError(
+            'Fal bakma hakkınız kalmamıştır. Premium planı yükseltin.',
+          ),
+        );
+        return;
+      }
+
+      // Check rate limit (60 seconds between readings)
+      final canReadByTime = await premiumService.canReadFortuneByTime();
+      if (!canReadByTime) {
+        final secondsUntilNext = await premiumService
+            .getSecondsUntilNextFortune();
+        final message = secondsUntilNext > 1
+            ? '$secondsUntilNext saniye sonra tekrar deneyin'
+            : '1 saniye sonra tekrar deneyin';
+        emit(LookError(message));
+        return;
+      }
+
       emit(const LookUploading());
 
       final model = CoffeeReadingModel(
@@ -149,108 +258,170 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           .where((f) => f.existsSync())
           .toList();
 
-      // Fortune API çağrısı
-      final Map<String, dynamic> resp = await fortuneService.readFortune(
+      // QUEUE SYSTEM: Submit to queue instead of direct API call
+      Logger.info('📋 Submitting fortune request to queue...', tag: 'LOOK');
+
+      final queueResponse = await fortuneService.submitFortuneToQueue(
         filesToSend,
         uid,
-        token ?? "",
+        name: user?.displayName,
         age: user?.age,
         gender: user?.gender,
         maritalStatus: user?.maritalStatus,
       );
 
-      Logger.debug('Fortune service response: ${resp.toString()}', tag: 'LOOK');
-
-      // ✅ Response kontrolü
-      if (resp['success'] == true) {
-        final dynamic responseData = resp['data'];
-
-        Logger.debug(
-          'Response data type: ${responseData.runtimeType}',
-          tag: 'LOOK',
-        );
-        Logger.debug('Response data: ${responseData.toString()}', tag: 'LOOK');
-
-        String fortuneText = '';
-
-        if (responseData == null) {
-          Logger.error('Response data is null!', tag: 'LOOK');
-          throw Exception('Fal yorumu boş geldi');
+      if (!queueResponse['success']) {
+        // Check if rate limited
+        if (queueResponse['rate_limited'] == true) {
+          final waitMinutes = queueResponse['wait_minutes'] ?? 5;
+          final message =
+              queueResponse['message'] ?? 'Lütfen $waitMinutes dakika bekleyin';
+          Logger.warn('Rate limited: $message', tag: 'LOOK');
+          ToastHelper.showError(message);
+          emit(LookError(message));
+          return;
         }
 
-        if (responseData is Map<String, dynamic>) {
-          if (responseData.containsKey('fortune')) {
-            fortuneText = responseData['fortune']?.toString() ?? '';
-          } else {
-            Logger.error(
-              'Response data does not contain fortune key!',
-              tag: 'LOOK',
-            );
-            Logger.error(
-              'Available keys: ${responseData.keys.toList()}',
-              tag: 'LOOK',
-            );
-            throw Exception('Fal yorumu bulunamadı');
-          }
-        } else if (responseData is String) {
-          fortuneText = responseData;
-        } else {
-          Logger.error(
-            'Unexpected data type: ${responseData.runtimeType}',
-            tag: 'LOOK',
-          );
-          throw Exception('Geçersiz veri formatı');
-        }
+        // Other errors
+        final errorMsg = queueResponse['message'] ?? 'Queue error';
+        Logger.error('Queue submit failed: $errorMsg', tag: 'LOOK');
+        ToastHelper.showError(errorMsg);
+        emit(LookError(errorMsg));
+        return;
+      }
+
+      // CHECK IF INSTANT RESPONSE (fortune already ready)
+      if (queueResponse['instant'] == true) {
+        Logger.success('✅ Instant fortune received!', tag: 'LOOK');
+        final fortuneText = queueResponse['fortune'] ?? 'Falınız hazır!';
 
         if (fortuneText.isEmpty) {
-          Logger.error('Fortune text is empty!', tag: 'LOOK');
-          throw Exception('Fal yorumu boş');
+          throw Exception('Fortune text is empty');
         }
 
-        // Sanitize
-        final sanitized = fortuneText.replaceAll(RegExp(r'\*+'), '').trim();
-        Logger.success(
-          'Fortune received: ${sanitized.substring(0, min(100, sanitized.length))}...',
-          tag: 'LOOK',
-        );
-
-        final key = await _hive.saveCoffeeReading(model);
-        // Model güncelle
-        model.reading = sanitized;
-
-        // Firestore'a kaydet
+        // Save fortune
+        final key = await HiveHelper().saveCoffeeReading(model);
+        model.reading = fortuneText;
         await HiveHelper().coffeeReadingBox.put(key, model);
+
         await FirestoreService.instance.addDocument('Fortunes', {
           'ownerId': uid,
           'imagePaths': model.imagePaths,
           'imageCount': model.imagePaths.length,
-          'reading': sanitized,
+          'reading': fortuneText,
           'notes': model.notes,
           'createdAt': Timestamp.fromDate(model.createdAt),
         });
 
-        Logger.info('Saved fortune to Firestore', tag: 'LOOK');
-
-        // Consume one fortune slot for this reading
+        // Premium update
         try {
           await PremiumService().incrementFortuneUsage();
+          await PremiumService().updateLastFortuneReadTime();
         } catch (e) {
-          Logger.error('Failed to increment fortune usage: $e', tag: 'LOOK');
+          Logger.error('Failed to update fortune usage: $e', tag: 'LOOK');
         }
 
-        ToastHelper.showSuccess('Falınız alındı');
+        // OneSignal notification
+        try {
+          await OneSignalService().scheduleDelayedNotification(
+            userId: uid,
+            title: 'Falınız Hazır! ✨',
+            message: 'Kahve falınız bekliyorsunuz. Hemen kontrol edin!',
+            delaySeconds: 300,
+          );
+        } catch (e) {
+          Logger.warn('OneSignal scheduling failed: $e', tag: 'LOOK');
+        }
 
+        ToastHelper.showSuccess('Falınız 5 dakika içinde hazır olacak! ⏳');
+
+        try {
+          _appRouter.push(const HomeRoute());
+        } catch (e) {
+          emit(LookSaved(key));
+        }
+
+        return;
+      }
+
+      // SUCCESS: Got request ID, show position (QUEUE MODE)
+      final requestId = queueResponse['request_id'];
+      final position = queueResponse['queue_position'] ?? 1;
+      final estimatedWait = queueResponse['estimated_wait'] ?? 30;
+
+      Logger.success(
+        '✅ Queue submitted! ID: $requestId, Position: $position',
+        tag: 'LOOK',
+      );
+
+      ToastHelper.showInfo(
+        'Sırada #$position konumundasınız (~${estimatedWait ~/ 60}min)',
+      );
+
+      // POLLING: Wait for fortune to be processed
+      Logger.info('Starting polling for fortune...', tag: 'LOOK');
+      final fortuneText = await _pollFortuneStatus(requestId, emit);
+
+      if (fortuneText == null) {
+        throw Exception('Fortune text is null');
+      }
+
+      // Save fortune to local storage
+      final key = await HiveHelper().saveCoffeeReading(model);
+      model.reading = fortuneText;
+
+      await HiveHelper().coffeeReadingBox.put(key, model);
+      Logger.info('Saved fortune to Firestore', tag: 'LOOK');
+
+      // Save to Firestore
+      await FirestoreService.instance.addDocument('Fortunes', {
+        'ownerId': uid,
+        'imagePaths': model.imagePaths,
+        'imageCount': model.imagePaths.length,
+        'reading': fortuneText,
+        'notes': model.notes,
+        'createdAt': Timestamp.fromDate(model.createdAt),
+      });
+
+      // Consume one fortune slot and update last reading time
+      try {
+        await PremiumService().incrementFortuneUsage();
+        await PremiumService().updateLastFortuneReadTime();
+      } catch (e) {
+        Logger.error('Failed to update fortune usage/time: $e', tag: 'LOOK');
+      }
+
+      // Schedule notification for 5 minutes later via OneSignal
+      try {
+        await OneSignalService().scheduleDelayedNotification(
+          userId: uid,
+          title: 'Falınız Hazır! ✨',
+          message: 'Kahve falınız bekliyorsunuz. Hemen kontrol edin!',
+          delaySeconds: 300, // 5 minutes
+        );
+        Logger.info('OneSignal delayed notification scheduled', tag: 'LOOK');
+      } catch (e) {
+        Logger.warn(
+          'OneSignal notification scheduling failed: $e',
+          tag: 'LOOK',
+        );
+        // Gracefully continue - app doesn't crash
+      }
+
+      // Show toast with notification info
+      ToastHelper.showSuccess('Falınız 5 dakika içinde hazır olacak! ⏳');
+
+      // Navigate to Home screen
+      try {
+        _appRouter.push(const HomeRoute());
+        Logger.info('Navigated to home screen', tag: 'LOOK');
+      } catch (e) {
+        Logger.warn('Failed to navigate home: $e', tag: 'LOOK');
+        // Fallback to emit saved state if navigation fails
         emit(LookSaved(key));
-      } else {
-        // Hata durumu
-        final String errorMsg =
-            resp['message']?.toString() ?? 'Fal servisi yanıt vermedi';
-        Logger.error('Fortune API error: $errorMsg', tag: 'LOOK');
-        ToastHelper.showError(errorMsg);
-        emit(LookError(errorMsg));
       }
     } catch (e) {
-      Logger.error('Error while fetching fortune: $e', tag: 'LOOK');
+      Logger.error('Error while processing fortune: $e', tag: 'LOOK');
       ToastHelper.showError('Fal alınırken hata oluştu');
       emit(LookError(e.toString()));
     }

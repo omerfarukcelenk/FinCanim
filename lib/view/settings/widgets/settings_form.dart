@@ -97,8 +97,6 @@ class _SettingsFormState extends State<SettingsForm> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(height: ResponsiveSize.padding_8),
-                  const SectionTitle('KİŞİSEL BİLGİLER'),
-                  SizedBox(height: ResponsiveSize.padding_8),
 
                   FieldLabel(AppLocalizations.of(context)!.nameLabel),
                   RoundedTextField(
@@ -108,18 +106,18 @@ class _SettingsFormState extends State<SettingsForm> {
                     hint: AppLocalizations.of(context)!.nameHint,
                   ),
                   SizedBox(height: ResponsiveSize.padding_12),
-                  FieldLabel(AppLocalizations.of(context)!.phoneLabel),
+                  FieldLabel('Email'),
                   RoundedTextField(
                     controller: context
                         .read<SettingsViewmodel>()
-                        .phoneController,
-                    hint: AppLocalizations.of(context)!.phoneHint,
+                        .emailController,
+                    hint: 'user@example.com',
                     enabled: false,
                   ),
                   Padding(
                     padding: EdgeInsets.only(top: 6, bottom: 6, left: 6),
                     child: Text(
-                      AppLocalizations.of(context)!.phoneNotEditable,
+                      'E-posta değiştirilemez',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
@@ -161,48 +159,7 @@ class _SettingsFormState extends State<SettingsForm> {
                     ],
                     onChanged: (v) => setState(() => _marital = v ?? _marital),
                   ),
-
-                  SizedBox(height: ResponsiveSize.padding_20),
-                  const SectionTitle('ŞİFRE DEĞİŞTİR'),
-                  SizedBox(height: ResponsiveSize.padding_8),
-
-                  const FieldLabel('Mevcut Şifre'),
-                  RoundedPasswordField(
-                    _currentPwdCtrl,
-                    _obscureCurrent,
-                    () => setState(() => _obscureCurrent = !_obscureCurrent),
-                  ),
-                  SizedBox(height: ResponsiveSize.padding_12),
-
-                  const FieldLabel('Yeni Şifre'),
-                  RoundedPasswordField(
-                    _newPwdCtrl,
-                    _obscureNew,
-                    () => setState(() => _obscureNew = !_obscureNew),
-                    validator: (v) {
-                      if (v != null && v.isNotEmpty && v.length < 6) {
-                        return AppLocalizations.of(context)!.passwordTooShort;
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: ResponsiveSize.padding_12),
-
-                  const FieldLabel('Yeni Şifre (Tekrar)'),
-                  RoundedPasswordField(
-                    _newPwd2Ctrl,
-                    _obscureNew2,
-                    () => setState(() => _obscureNew2 = !_obscureNew2),
-                    validator: (v) {
-                      if (_newPwdCtrl.text.isNotEmpty &&
-                          v != _newPwdCtrl.text) {
-                        return AppLocalizations.of(context)!.passwordNotMatch;
-                      }
-                      return null;
-                    },
-                  ),
-
-                  SizedBox(height: ResponsiveSize.padding_24),
+                  SizedBox(height: ResponsiveSize.height_50 / 2),
                   SizedBox(
                     height: 56,
                     child: ElevatedButton(
@@ -212,7 +169,6 @@ class _SettingsFormState extends State<SettingsForm> {
                               final vm = context.read<SettingsViewmodel>();
                               vm.saveSettings(
                                 name: vm.nameController.text.trim(),
-                                phoneNumber: vm.phoneController.text.trim(),
                                 age: vm.ageController.text.trim(),
                                 gender: _gender,
                                 maritalStatus: _marital,

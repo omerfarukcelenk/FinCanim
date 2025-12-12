@@ -10,10 +10,12 @@ part 'register_event.dart';
 part 'register_state.dart';
 
 class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
-  RegisterViewModel() : super(RegisterState()) {
+  RegisterViewModel() : super(RegisterState.initial()) {
     on<RegisterInitialEvent>(_initialEvent);
     on<UpdateNameEvent>(_onUpdateName);
-    on<UpdatePhoneEvent>(_onUpdatePhone);
+    on<UpdateEmailEvent>(_onUpdateEmail);
+    on<UpdatePasswordEvent>(_onUpdatePassword);
+    on<UpdatePasswordConfirmEvent>(_onUpdatePasswordConfirm);
     on<UpdateGenderEvent>(_onUpdateGender);
     on<UpdateMaritalStatusEvent>(_onUpdateMaritalStatus);
     on<UpdateAgeEvent>(_onUpdateAge);
@@ -33,11 +35,32 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
     emit(state.copyWith(name: event.name, status: RegisterStatus.initial));
   }
 
-  FutureOr<void> _onUpdatePhone(
-    UpdatePhoneEvent event,
+  FutureOr<void> _onUpdateEmail(
+    UpdateEmailEvent event,
     Emitter<RegisterState> emit,
   ) {
-    emit(state.copyWith(phone: event.phone, status: RegisterStatus.initial));
+    emit(state.copyWith(email: event.email, status: RegisterStatus.initial));
+  }
+
+  FutureOr<void> _onUpdatePassword(
+    UpdatePasswordEvent event,
+    Emitter<RegisterState> emit,
+  ) {
+    emit(
+      state.copyWith(password: event.password, status: RegisterStatus.initial),
+    );
+  }
+
+  FutureOr<void> _onUpdatePasswordConfirm(
+    UpdatePasswordConfirmEvent event,
+    Emitter<RegisterState> emit,
+  ) {
+    emit(
+      state.copyWith(
+        passwordConfirm: event.passwordConfirm,
+        status: RegisterStatus.initial,
+      ),
+    );
   }
 
   FutureOr<void> _onUpdateGender(
@@ -72,13 +95,16 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
   ) async {
     emit(state.copyWith(status: RegisterStatus.loading));
     try {
-      // Ensure Firebase user exists (OTP flow signs in the user)
-      final firebaseUser = FirebaseAuthService.instance.currentUser;
-      if (firebaseUser == null) throw Exception('Kullanıcı bulunamadı');
+      // Validate passwords match
+      if (state.password != state.passwordConfirm) {
+        throw Exception('Şifreler eşleşmiyor');
+      }
 
-      // Ensure a Firestore document exists (minimal profile)
-      await FirebaseAuthService.instance.ensureUserDocument(
-        displayName: state.name.isNotEmpty ? state.name : null,
+      // Sign up with email and password
+      await FirebaseAuthService.instance.signUpWithEmail(
+        email: state.email,
+        password: state.password,
+        displayName: state.name,
         gender: state.gender.isNotEmpty ? state.gender : null,
         maritalStatus: state.maritalStatus.isNotEmpty
             ? state.maritalStatus
@@ -86,7 +112,7 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
         age: state.age,
       );
 
-      // Initialize FREE plan for new user with profile data
+      // Initialize FREE plan for new user
       await PremiumService().initializeNewUser(
         displayName: state.name.isNotEmpty ? state.name : null,
         gender: state.gender.isNotEmpty ? state.gender : null,
@@ -94,25 +120,26 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
             ? state.maritalStatus
             : null,
         age: state.age,
-        phoneNumber: firebaseUser.phoneNumber,
       );
 
-      // persist to Hive
-      final userModel = UserModel(
-        uid: firebaseUser.uid,
-        email: firebaseUser.email ?? '',
-        displayName: firebaseUser.displayName ?? state.name,
-        phoneNumber: firebaseUser.phoneNumber,
-        gender: state.gender.isNotEmpty ? state.gender : null,
-        maritalStatus: state.maritalStatus.isNotEmpty
-            ? state.maritalStatus
-            : null,
-        age: state.age,
-      );
-      try {
-        await HiveHelper().clearAllUsers();
-        await HiveHelper().saveUser(userModel);
-      } catch (_) {}
+      // Persist to Hive
+      final firebaseUser = FirebaseAuthService.instance.currentUser;
+      if (firebaseUser != null) {
+        final userModel = UserModel(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? '',
+          displayName: firebaseUser.displayName ?? state.name,
+          gender: state.gender.isNotEmpty ? state.gender : null,
+          maritalStatus: state.maritalStatus.isNotEmpty
+              ? state.maritalStatus
+              : null,
+          age: state.age,
+        );
+        try {
+          await HiveHelper().clearAllUsers();
+          await HiveHelper().saveUser(userModel);
+        } catch (_) {}
+      }
 
       emit(state.copyWith(status: RegisterStatus.success));
     } catch (e) {
@@ -133,10 +160,9 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
     try {
       await FirebaseAuthService.instance.signInWithGoogle();
 
-      // Initialize FREE plan for new user with Firebase data
+      // Initialize FREE plan for new user
       await PremiumService().initializeNewUser(
         displayName: FirebaseAuthService.instance.currentUser?.displayName,
-        phoneNumber: FirebaseAuthService.instance.currentUser?.phoneNumber,
       );
 
       final firebaseUser = FirebaseAuthService.instance.currentUser;
@@ -145,7 +171,6 @@ class RegisterViewModel extends Bloc<RegisterEvent, RegisterState> {
           uid: firebaseUser.uid,
           email: firebaseUser.email ?? '',
           displayName: firebaseUser.displayName,
-          phoneNumber: firebaseUser.phoneNumber,
         );
         try {
           await HiveHelper().clearAllUsers();

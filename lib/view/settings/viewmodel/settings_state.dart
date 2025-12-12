@@ -4,7 +4,7 @@ class SettingsState {
   final bool loading;
   final bool saving;
   final String name;
-  final String phoneNumber;
+  final String email;
   final String age;
   final String gender;
   final String maritalStatus;
@@ -14,7 +14,7 @@ class SettingsState {
     required this.loading,
     required this.saving,
     required this.name,
-    required this.phoneNumber,
+    required this.email,
     required this.age,
     required this.gender,
     required this.maritalStatus,
@@ -25,7 +25,7 @@ class SettingsState {
     loading: false,
     saving: false,
     name: '',
-    phoneNumber: '',
+    email: '',
     age: '',
     gender: 'Erkek',
     maritalStatus: 'Bekar',
@@ -36,7 +36,7 @@ class SettingsState {
     bool? loading,
     bool? saving,
     String? name,
-    String? phoneNumber,
+    String? email,
     String? age,
     String? gender,
     String? maritalStatus,
@@ -46,7 +46,7 @@ class SettingsState {
       loading: loading ?? this.loading,
       saving: saving ?? this.saving,
       name: name ?? this.name,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
+      email: email ?? this.email,
       age: age ?? this.age,
       gender: gender ?? this.gender,
       maritalStatus: maritalStatus ?? this.maritalStatus,

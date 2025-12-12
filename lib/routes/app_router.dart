@@ -15,6 +15,7 @@ part 'app_router.gr.dart';
 @AutoRouterConfig()
 class AppRouter extends _$AppRouter {
   AppRouter({super.navigatorKey});
+
   @override
   List<AutoRoute> get routes => [
     AutoRoute(page: SplashRoute.page, initial: true),
@@ -28,3 +29,5 @@ class AppRouter extends _$AppRouter {
     AutoRoute(page: SettingsRoute.page),
   ];
 }
+
+// Deep link handling will be added in future updates

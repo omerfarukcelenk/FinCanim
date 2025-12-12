@@ -4,6 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:falcim_benim/services/firestore_service.dart';
+import 'package:falcim_benim/services/onesignal_service.dart';
 
 /// Lightweight Firebase Auth service wrapper.
 ///
@@ -26,6 +27,10 @@ class FirebaseAuthService {
     if (_initialized) return;
     await Firebase.initializeApp();
     _auth = FirebaseAuth.instance;
+
+    // Disable reCAPTCHA verification for development and testing
+    await _auth!.setSettings(appVerificationDisabledForTesting: true);
+
     _initialized = true;
   }
 
@@ -50,8 +55,31 @@ class FirebaseAuthService {
     String? maritalStatus,
     int? age,
   }) async {
-    // Email/password signup removed — app uses phone + OTP.
-    throw UnimplementedError('Email signup is disabled. Use phone + OTP.');
+    _ensureAuth();
+    try {
+      final credential = await _auth!.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = credential.user;
+      if (user != null) {
+        await user.updateDisplayName(displayName);
+        await ensureUserDocument(
+          displayName: displayName,
+          gender: gender,
+          maritalStatus: maritalStatus,
+          age: age,
+        );
+
+        // Set OneSignal external user ID
+        await OneSignalService().setExternalUserId(user.uid);
+      }
+
+      return credential;
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
   /// Sign in with email and password.
@@ -59,13 +87,29 @@ class FirebaseAuthService {
     required String email,
     required String password,
   }) async {
-    // Email sign-in removed — use phone + OTP flow instead.
-    throw UnimplementedError('Email sign-in is disabled. Use phone + OTP.');
+    _ensureAuth();
+    try {
+      final credential = await _auth!.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Set OneSignal external user ID
+      if (credential.user != null) {
+        await OneSignalService().setExternalUserId(credential.user!.uid);
+      }
+
+      return credential;
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
   /// Sign out current user.
   Future<void> signOut() async {
     _ensureAuth();
+    // Remove OneSignal external user ID
+    await OneSignalService().removeExternalUserId();
     // Also sign out from GoogleSignIn on mobile platforms.
     if (!kIsWeb) {
       try {
@@ -134,6 +178,9 @@ class FirebaseAuthService {
             ...data,
           }, SetOptions(merge: true));
         }
+
+        // Set OneSignal external user ID
+        await OneSignalService().setExternalUserId(user.uid);
       }
 
       return credential;
@@ -144,8 +191,12 @@ class FirebaseAuthService {
 
   /// Send a password reset email to the provided address.
   Future<void> sendPasswordResetEmail(String email) async {
-    // Password reset not supported for phone-only authentication.
-    throw UnimplementedError('Password reset is disabled for phone-only auth.');
+    _ensureAuth();
+    try {
+      await _auth!.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException {
+      rethrow;
+    }
   }
 
   /// Ensure a Firestore user document exists for the currently signed-in user.
@@ -163,7 +214,7 @@ class FirebaseAuthService {
     final snapshot = await userDoc.get();
 
     final data = {
-      'phoneNumber': user.phoneNumber ?? '',
+      'email': user.email ?? '',
       'displayName': displayName ?? user.displayName ?? '',
       'profilePictureUrl': user.photoURL ?? '',
       'isPremium': false,

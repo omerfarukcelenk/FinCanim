@@ -9,8 +9,10 @@ part 'login_event.dart';
 part 'login_state.dart';
 
 class LoginViewModel extends Bloc<LoginEvent, LoginState> {
-  LoginViewModel() : super(LoginState()) {
+  LoginViewModel() : super(LoginState.initial()) {
     on<LoginInitialEvent>(_initialEvent);
+    on<UpdateEmailEvent>(_onUpdateEmail);
+    on<UpdatePasswordEvent>(_onUpdatePassword);
     on<SignInCompletedEvent>(_onSignInCompleted);
     on<SignInWithGoogleEvent>(_onSignInWithGoogle);
   }
@@ -21,10 +23,17 @@ class LoginViewModel extends Bloc<LoginEvent, LoginState> {
   ) {}
 
   FutureOr<void> _onUpdateEmail(
-    UpdatePhoneEvent event,
+    UpdateEmailEvent event,
     Emitter<LoginState> emit,
   ) {
-    emit(state.copyWith(phone: event.phone, status: LoginStatus.initial));
+    emit(state.copyWith(email: event.email, status: LoginStatus.initial));
+  }
+
+  FutureOr<void> _onUpdatePassword(
+    UpdatePasswordEvent event,
+    Emitter<LoginState> emit,
+  ) {
+    emit(state.copyWith(password: event.password, status: LoginStatus.initial));
   }
 
   Future<void> _onSignInCompleted(
@@ -33,19 +42,21 @@ class LoginViewModel extends Bloc<LoginEvent, LoginState> {
   ) async {
     emit(state.copyWith(status: LoginStatus.loading));
     try {
-      // After OTP flow the FirebaseAuth currentUser should be set
+      // Sign in with email and password
+      await FirebaseAuthService.instance.signInWithEmail(
+        email: state.email,
+        password: state.password,
+      );
+
+      // Get current Firebase user
       final firebaseUser = FirebaseAuthService.instance.currentUser;
       if (firebaseUser == null) throw Exception('Kullanıcı doğrulanmadı');
-
-      // Ensure Firestore user document exists (create minimal if needed)
-      await FirebaseAuthService.instance.ensureUserDocument();
 
       // Persist authenticated user to Hive
       final userModel = UserModel(
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
         displayName: firebaseUser.displayName,
-        phoneNumber: firebaseUser.phoneNumber,
       );
       try {
         await HiveHelper().clearAllUsers();
@@ -76,7 +87,6 @@ class LoginViewModel extends Bloc<LoginEvent, LoginState> {
           uid: firebaseUser.uid,
           email: firebaseUser.email ?? '',
           displayName: firebaseUser.displayName,
-          phoneNumber: firebaseUser.phoneNumber,
         );
         try {
           await HiveHelper().clearAllUsers();

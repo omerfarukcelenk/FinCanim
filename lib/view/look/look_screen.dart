@@ -23,8 +23,16 @@ class LookScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ResponsiveSize.init(context);
+    final appRouter = context.router;
+
     return BlocProvider(
-      create: (context) => LookViewmodel(),
+      create: (context) {
+        final viewmodel = LookViewmodel();
+        if (appRouter is AppRouter) {
+          viewmodel.setAppRouter(appRouter);
+        }
+        return viewmodel;
+      },
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -85,15 +93,6 @@ class LookScreen extends StatelessWidget {
                       ),
                     ),
               );
-            } else if (state is LookSaved) {
-              // dismiss loading dialog if present
-              try {
-                Navigator.of(context, rootNavigator: true).pop();
-              } catch (_) {}
-              // show ready message and navigate to detail
-              ToastHelper.showSuccess('Falınız hazır');
-              // navigate to Detail page with saved index
-              context.router.push(DetailRoute(index: state.key));
             } else if (state is LookError) {
               // dismiss loading dialog if present
               try {
