@@ -3,7 +3,7 @@ import 'package:falcim_benim/l10n/app_localizations.dart';
 import 'package:falcim_benim/routes/app_router.dart';
 import 'package:falcim_benim/utils/responsive_size.dart';
 import 'package:falcim_benim/view/login/viewmodel/login_viewmodel.dart';
-import 'package:falcim_benim/view/login/widgets/google_sign_button.dart';
+
 import 'package:falcim_benim/view/login/widgets/login_footer.dart';
 import 'package:falcim_benim/view/login/widgets/login_header.dart';
 import 'package:falcim_benim/view/login/widgets/login_input.dart';

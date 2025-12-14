@@ -94,6 +94,13 @@ class HiveHelper {
     return null;
   }
 
+  // Update user at index
+  Future<void> updateUserAt(int index, UserModel user) async {
+    if (index < _userBox.length) {
+      await _userBox.putAt(index, user);
+    }
+  }
+
   // Delete coffee reading
   Future<void> deleteCoffeeReading(int index) async {
     await _coffeeReadingBox.deleteAt(index);

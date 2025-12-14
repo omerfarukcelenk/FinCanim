@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:falcim_benim/data/local/hive_helper.dart';
 import 'package:falcim_benim/data/models/user_model.dart';
 import 'package:falcim_benim/services/firebase_auth_service.dart';
-import 'package:falcim_benim/services/premium_service.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 part 'profile_event.dart';
@@ -26,9 +26,23 @@ class ProfileViewmodel extends Bloc<ProfileEvent, ProfileState> {
       UserModel? user;
       if (users.isNotEmpty) user = users.first;
 
-      // Load readings from Firestore via PremiumService
-      final totalReadings = await PremiumService().getTotalReadings();
-      final remainingReadings = await PremiumService().getRemainingReadings();
+      // Load readings count from current user's Firestore data
+      int totalReadings = 0;
+      int remainingReadings = 7;
+
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('Users')
+            .doc(user?.uid)
+            .get();
+
+        if (userDoc.exists) {
+          totalReadings = userDoc.data()?['totalReadings'] ?? 0;
+          remainingReadings = userDoc.data()?['remaningReadings'] ?? 7;
+        }
+      } catch (e) {
+        // Fallback to defaults
+      }
 
       emit(
         state.copyWith(

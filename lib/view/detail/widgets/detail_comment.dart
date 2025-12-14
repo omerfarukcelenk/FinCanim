@@ -18,20 +18,6 @@ class DetailComment extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (categoryTitle != null) ...[
-          Padding(
-            padding: EdgeInsets.only(bottom: ResponsiveSize.padding_8),
-            child: Text(
-              categoryTitle!,
-              style: TextStyle(
-                fontSize: ResponsiveSize.fontSize_16,
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context).textTheme.titleLarge?.color,
-              ),
-            ),
-          ),
-        ],
-
         Container(
           decoration: BoxDecoration(
             image: DecorationImage(

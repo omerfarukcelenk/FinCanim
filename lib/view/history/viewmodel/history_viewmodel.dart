@@ -79,8 +79,7 @@ class HistoryViewmodel extends Bloc<HistoryEvent, HistoryState> {
           return;
         }
 
-        // Clear local cache and repopulate to keep Detail/other screens working
-        await _hive.clearAllReadings();
+        // Firebase has data - use it directly (don't sync to Hive)
         _indexToDocId.clear();
 
         final List<CoffeeReadingModel> saved = [];
@@ -107,17 +106,15 @@ class HistoryViewmodel extends Bloc<HistoryEvent, HistoryState> {
             notes: notes,
           );
 
-          final int key = await _hive.saveCoffeeReading(model);
-          // Map the positional index to the firestore doc id for potential deletes
+          // Map the positional index to the firestore doc id for deletes
           _indexToDocId[saved.length] = d.id;
           saved.add(model);
         }
 
-        final refreshed = await _hive.getAllCoffeeReadings();
-        if (refreshed.isEmpty) {
+        if (saved.isEmpty) {
           emit(const HistoryEmpty());
         } else {
-          emit(HistoryLoaded(readings: refreshed));
+          emit(HistoryLoaded(readings: saved));
         }
         return;
       }

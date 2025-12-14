@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:falcim_benim/data/local/hive_helper.dart';
 import 'package:falcim_benim/data/models/fortune_slot_model.dart';
 import 'package:falcim_benim/data/models/premium_model.dart';
 import 'package:falcim_benim/data/models/usage_model.dart';
@@ -9,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 class PremiumService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final HiveHelper _hive = HiveHelper();
 
   // Singleton
   static final PremiumService _instance = PremiumService._internal();
@@ -251,21 +253,44 @@ class PremiumService {
 
   /// Check if user can read fortune (has available slot)
   Future<bool> canReadFortune() async {
-    if (_userId == null) return false;
+    if (_userId == null) {
+      print('DEBUG: canReadFortune - No user ID');
+      return false;
+    }
 
     try {
       await _ensurePlanValid();
 
       // Premium users have unlimited access
       final premium = await getPremiumDetails();
-      if (premium?.isActive() ?? false) return true;
+      if (premium?.isActive() ?? false) {
+        print('DEBUG: canReadFortune - Premium user, unlimited access');
+        return true;
+      }
 
       // Get usage and check slots
       final usage = await _getUsageWithRefresh();
-      if (usage == null) return true; // First time user
+      if (usage == null) {
+        print('DEBUG: canReadFortune - First time user (no usage data)');
+        return true; // First time user
+      }
+
+      final availableCount = usage.getAvailableSlotCount();
+      final totalSlots = usage.fortuneSlots.length;
+      print(
+        'DEBUG: canReadFortune - Available: $availableCount, Total: $totalSlots',
+      );
+
+      // Log each slot status
+      for (var i = 0; i < usage.fortuneSlots.length; i++) {
+        final slot = usage.fortuneSlots[i];
+        print(
+          '  Slot $i: isUsed=${slot.isUsed}, isAvailable=${slot.isAvailable()}, usedAt=${slot.usedAt}',
+        );
+      }
 
       // Check if any slot is available
-      return usage.getAvailableSlotCount() > 0;
+      return availableCount > 0;
     } catch (e) {
       print('Error checking fortune availability: $e');
       return false;
@@ -327,9 +352,13 @@ class PremiumService {
   // slots with zero remaining time and isAvailable=true.
   Future<void> _emitCurrentSlotStates() async {
     try {
+      print('🔄 DEBUG: _emitCurrentSlotStates - Starting...');
       await _ensurePlanValid();
 
       if (_userId == null) {
+        print(
+          '⚠️ DEBUG: _emitCurrentSlotStates - No user ID, emitting 7 free slots',
+        );
         // No user: emit free plan slots (7)
         final slots = List.generate(
           7,
@@ -346,6 +375,9 @@ class PremiumService {
 
       final premium = await getPremiumDetails();
       if (premium?.isActive() ?? false) {
+        print(
+          '✅ DEBUG: _emitCurrentSlotStates - Premium user, unlimited slots',
+        );
         // Premium user: unlimited slots
         final slotCount = premium!.getMonthlySlotCount();
         final slots = List.generate(
@@ -361,9 +393,15 @@ class PremiumService {
         return;
       }
 
+      print(
+        '✅ DEBUG: _emitCurrentSlotStates - Free user, fetching actual slots',
+      );
       // Free user: get actual slots from usage
       final usage = await _getUsage();
       if (usage == null) {
+        print(
+          '⚠️ DEBUG: _emitCurrentSlotStates - No usage found, emitting 7 free slots',
+        );
         final slots = List.generate(
           7,
           (i) => PremiumSlotState(
@@ -392,9 +430,13 @@ class PremiumService {
         );
       }
 
+      print(
+        '✅ DEBUG: _emitCurrentSlotStates - Emitting ${states.length} slots, available: ${states.where((s) => s.isAvailable).length}',
+      );
       _slotController.add(states);
+      print('✅ DEBUG: _emitCurrentSlotStates - COMPLETED SUCCESSFULLY ✨');
     } catch (e) {
-      print('Error emitting slot states: $e');
+      print('❌ ERROR in _emitCurrentSlotStates: $e');
     }
   }
 
@@ -427,13 +469,24 @@ class PremiumService {
 
   /// Increment fortune usage (use a slot)
   Future<void> incrementFortuneUsage() async {
-    if (_userId == null) return;
+    if (_userId == null) {
+      print('❌ ERROR: incrementFortuneUsage - No user ID');
+      return;
+    }
 
     try {
+      print('🔄 DEBUG: incrementFortuneUsage - Starting...');
       await _ensurePlanValid();
+      print('✅ DEBUG: Plan validated');
 
       final docRef = _firestore.collection('Users').doc(_userId);
       final doc = await docRef.get();
+
+      if (!doc.exists) {
+        print('❌ ERROR: Document does not exist for user $_userId');
+        return;
+      }
+      print('✅ DEBUG: Document retrieved');
 
       // Get premium plan to know slot count
       final premiumData = doc.data()?['premium'];
@@ -441,11 +494,17 @@ class PremiumService {
           ? PremiumModel.fromMap(premiumData)
           : PremiumModel(isPremium: false, plan: "free");
 
+      print('✅ DEBUG: Premium plan: ${premium.plan}');
+
       UsageModel usage;
       if (doc.exists && doc.data()?['usage'] != null) {
         usage = UsageModel.fromMap(doc.data()!['usage']);
+        print(
+          '✅ DEBUG: Existing usage found, slots: ${usage.fortuneSlots.length}',
+        );
         // Refresh expired slots
         usage = usage.refreshSlots();
+        print('✅ DEBUG: Slots refreshed');
       } else {
         usage = UsageModel(
           fortuneSlots: List.generate(
@@ -455,18 +514,58 @@ class PremiumService {
           totalFortunes: 0,
           monthlyResetDate: DateTime.now(),
         );
+        print(
+          '✅ DEBUG: New usage created with ${usage.fortuneSlots.length} slots',
+        );
       }
+
+      final beforeCount = usage.totalFortunes;
+      final beforeAvailable = usage.getAvailableSlotCount();
 
       // Use a slot
       usage = usage.useSlot();
 
-      // Save to Firestore
-      await docRef.set({'usage': usage.toMap()}, SetOptions(merge: true));
+      final afterCount = usage.totalFortunes;
+      final afterAvailable = usage.getAvailableSlotCount();
+
+      print(
+        '✅ DEBUG: Fortune count: $beforeCount → $afterCount | Available: $beforeAvailable → $afterAvailable',
+      );
+
+      // Save to Firestore - update both 'usage' and legacy fields
+      final remaningReadings = afterAvailable;
+      final totalReadings = afterCount;
+
+      await docRef.set({
+        'usage': usage.toMap(),
+        'totalReadings': totalReadings,
+        'remaningReadings': remaningReadings,
+      }, SetOptions(merge: true));
+      print(
+        '✅ DEBUG: Saved to Firestore (usage + legacy fields: totalReadings=$totalReadings, remaningReadings=$remaningReadings)',
+      );
+
+      // Also update Hive cache for local sync
+      try {
+        final hiveUser = await _hive.getUserAt(0);
+        if (hiveUser != null) {
+          hiveUser.totalReadings = totalReadings;
+          hiveUser.remaningReadings = remaningReadings;
+          await _hive.updateUserAt(0, hiveUser);
+          print(
+            '✅ DEBUG: Updated Hive cache (totalReadings=$totalReadings, remaningReadings=$remaningReadings)',
+          );
+        }
+      } catch (e) {
+        print('⚠️  WARNING: Failed to update Hive cache: $e');
+      }
 
       // Refresh stream
       await refreshSlotStates();
+      print('✅ DEBUG: incrementFortuneUsage COMPLETED SUCCESSFULLY ✨');
     } catch (e) {
-      print('Error incrementing usage: $e');
+      print('❌ ERROR incrementing usage: $e');
+      print('📋 Stack trace: ${StackTrace.current}');
     }
   }
 

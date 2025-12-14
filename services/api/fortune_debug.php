@@ -10,7 +10,7 @@ error_reporting(E_ALL);
 date_default_timezone_set('Europe/Istanbul');
 
 // Log file
-$logFile = __DIR__ . '/fortune.log';
+$logFile = __DIR__ . '/fortune_debug.log';
 
 function logMessage($message)
 {

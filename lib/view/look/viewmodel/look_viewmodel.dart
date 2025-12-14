@@ -1,17 +1,15 @@
 import 'dart:io';
-import 'dart:math';
 import 'package:bloc/bloc.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:falcim_benim/data/models/user_model.dart';
 import 'package:falcim_benim/services/firebase_auth_service.dart';
 import 'package:falcim_benim/services/fortune_service.dart';
-import 'package:falcim_benim/services/local_notification_service.dart';
 import 'package:falcim_benim/services/onesignal_service.dart';
+import 'package:falcim_benim/services/premium_service.dart';
 import 'package:falcim_benim/utils/toast_helper.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:falcim_benim/view/look/viewmodel/look_event.dart';
-import 'package:falcim_benim/services/premium_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -140,6 +138,8 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
     const Duration pollInterval = Duration(seconds: 5);
     const int maxPolls = 720; // 60 minutes max
     int pollCount = 0;
+    int consecutiveErrors = 0;
+    const int maxConsecutiveErrors = 3;
 
     Logger.info(
       'Starting fortune status polling... (max ${maxPolls * 5}s)',
@@ -158,16 +158,19 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           // Continue - it's okay if queue trigger fails
         }
 
-        // Check status
+        // Check status (with built-in retry logic)
         final statusResponse = await fortuneService.checkFortuneStatus(
           requestId,
         );
 
         if (statusResponse['success'] == true) {
-          final status = statusResponse['status'];
+          consecutiveErrors = 0; // Reset error counter on success
+          final status =
+              statusResponse['data']['status'] ?? statusResponse['status'];
 
           if (status == 'completed') {
-            final fortune = statusResponse['fortune'];
+            final fortune =
+                statusResponse['data']['fortune'] ?? statusResponse['fortune'];
             if (fortune == null || fortune.toString().isEmpty) {
               throw Exception('Fortune text is empty');
             }
@@ -177,30 +180,56 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
             );
             return fortune.toString();
           } else if (status == 'pending' || status == 'processing') {
-            final position = statusResponse['queue_position'] ?? pollCount;
+            final position =
+                statusResponse['data']['queue_position'] ??
+                statusResponse['queue_position'] ??
+                pollCount;
             final estimatedWait =
-                statusResponse['estimated_wait'] ?? (pollCount * 5);
+                statusResponse['data']['estimated_wait'] ??
+                statusResponse['estimated_wait'] ??
+                (pollCount * 5);
 
             Logger.info(
               '⏳ Processing... Position: $position, Wait: ~${estimatedWait}s',
               tag: 'LOOK',
             );
 
-            // Show UI update (optional - emit custom state if needed)
-            emit(LookUploading()); // Reuse uploading state for waiting
+            // Show UI update
+            emit(LookUploading());
 
             // Wait before next poll
             await Future.delayed(pollInterval);
+          } else {
+            throw Exception('Unknown status: $status');
           }
-        } else if (statusResponse['rate_limited'] == true) {
-          throw Exception('Rate limited');
         } else {
           throw Exception(statusResponse['message'] ?? 'Status check failed');
         }
       } catch (e) {
-        Logger.error('Poll error: $e', tag: 'LOOK');
-        // Continue polling even if single request fails
-        await Future.delayed(pollInterval);
+        consecutiveErrors++;
+        Logger.warn(
+          'Poll error (attempt $consecutiveErrors/$maxConsecutiveErrors): $e',
+          tag: 'LOOK',
+        );
+
+        // If too many consecutive errors, give up
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          Logger.error(
+            'Too many consecutive errors, stopping polling',
+            tag: 'LOOK',
+          );
+          throw Exception(
+            'Polling failed after $maxConsecutiveErrors consecutive errors: $e',
+          );
+        }
+
+        // Exponential backoff on error
+        final backoffDelay = pollInterval * consecutiveErrors;
+        Logger.debug(
+          'Waiting ${backoffDelay.inSeconds}s before retry...',
+          tag: 'LOOK',
+        );
+        await Future.delayed(backoffDelay);
       }
     }
 
@@ -258,9 +287,31 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           .where((f) => f.existsSync())
           .toList();
 
-      // QUEUE SYSTEM: Submit to queue instead of direct API call
+      // QUEUE SYSTEM: Submit to queue in background (non-blocking)
       Logger.info('📋 Submitting fortune request to queue...', tag: 'LOOK');
+      emit(const LookUploading());
 
+      // Run queue submission in background to avoid blocking UI
+      _submitQueueInBackground(filesToSend, uid, user, model, emit);
+
+      // Immediately return to UI - background task continues
+      return;
+    } catch (e) {
+      Logger.error('Error while processing fortune: $e', tag: 'LOOK');
+      ToastHelper.showError('Fal alınırken hata oluştu');
+      emit(LookError(e.toString()));
+    }
+  }
+
+  /// Background task: Submit fortune request to queue without blocking UI
+  Future<void> _submitQueueInBackground(
+    List<File> filesToSend,
+    String uid,
+    UserModel? user,
+    CoffeeReadingModel model,
+    Emitter<LookState> emit,
+  ) async {
+    try {
       final queueResponse = await fortuneService.submitFortuneToQueue(
         filesToSend,
         uid,
@@ -271,7 +322,6 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
       );
 
       if (!queueResponse['success']) {
-        // Check if rate limited
         if (queueResponse['rate_limited'] == true) {
           final waitMinutes = queueResponse['wait_minutes'] ?? 5;
           final message =
@@ -282,7 +332,6 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           return;
         }
 
-        // Other errors
         final errorMsg = queueResponse['message'] ?? 'Queue error';
         Logger.error('Queue submit failed: $errorMsg', tag: 'LOOK');
         ToastHelper.showError(errorMsg);
@@ -290,7 +339,7 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
         return;
       }
 
-      // CHECK IF INSTANT RESPONSE (fortune already ready)
+      // Instant response (cached fortune)
       if (queueResponse['instant'] == true) {
         Logger.success('✅ Instant fortune received!', tag: 'LOOK');
         final fortuneText = queueResponse['fortune'] ?? 'Falınız hazır!';
@@ -299,7 +348,6 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           throw Exception('Fortune text is empty');
         }
 
-        // Save fortune
         final key = await HiveHelper().saveCoffeeReading(model);
         model.reading = fortuneText;
         await HiveHelper().coffeeReadingBox.put(key, model);
@@ -313,15 +361,30 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           'createdAt': Timestamp.fromDate(model.createdAt),
         });
 
-        // Premium update
         try {
+          Logger.info(
+            'Starting to increment fortune usage (instant)...',
+            tag: 'LOOK',
+          );
           await PremiumService().incrementFortuneUsage();
+          Logger.success('✅ Fortune usage incremented (instant)', tag: 'LOOK');
+
+          Logger.info(
+            'Updating last fortune read time (instant)...',
+            tag: 'LOOK',
+          );
           await PremiumService().updateLastFortuneReadTime();
+          Logger.success(
+            '✅ Last fortune read time updated (instant)',
+            tag: 'LOOK',
+          );
         } catch (e) {
-          Logger.error('Failed to update fortune usage: $e', tag: 'LOOK');
+          Logger.error(
+            '❌ Failed to update fortune usage (instant): $e',
+            tag: 'LOOK',
+          );
         }
 
-        // OneSignal notification
         try {
           await OneSignalService().scheduleDelayedNotification(
             userId: uid,
@@ -334,17 +397,15 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
         }
 
         ToastHelper.showSuccess('Falınız 5 dakika içinde hazır olacak! ⏳');
-
         try {
           _appRouter.push(const HomeRoute());
         } catch (e) {
           emit(LookSaved(key));
         }
-
         return;
       }
 
-      // SUCCESS: Got request ID, show position (QUEUE MODE)
+      // Queue mode: got request ID, now poll in background
       final requestId = queueResponse['request_id'];
       final position = queueResponse['queue_position'] ?? 1;
       final estimatedWait = queueResponse['estimated_wait'] ?? 30;
@@ -353,15 +414,37 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
         '✅ Queue submitted! ID: $requestId, Position: $position',
         tag: 'LOOK',
       );
-
       ToastHelper.showInfo(
         'Sırada #$position konumundasınız (~${estimatedWait ~/ 60}min)',
       );
 
-      // POLLING: Wait for fortune to be processed
-      Logger.info('Starting polling for fortune...', tag: 'LOOK');
-      final fortuneText = await _pollFortuneStatus(requestId, emit);
+      // Fire-and-forget: poll in background without blocking handler
+      // Do NOT await this - let it run in the background
+      _pollFortuneStatusInBackground(requestId, uid, model, emit).ignore();
 
+      // Return immediately - emit is done
+      return;
+    } catch (e) {
+      Logger.error('Background queue submission error: $e', tag: 'LOOK');
+      ToastHelper.showError('Fal alınırken hata oluştu');
+      emit(LookError(e.toString()));
+    }
+  }
+
+  /// Background task: Poll fortune status without blocking UI
+  Future<void> _pollFortuneStatusInBackground(
+    String requestId,
+    String uid,
+    CoffeeReadingModel model,
+    Emitter<LookState> emit,
+  ) async {
+    try {
+      Logger.info(
+        'Starting fortune status polling in background...',
+        tag: 'LOOK',
+      );
+
+      final fortuneText = await _pollFortuneStatus(requestId, emit);
       if (fortuneText == null) {
         throw Exception('Fortune text is null');
       }
@@ -369,9 +452,7 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
       // Save fortune to local storage
       final key = await HiveHelper().saveCoffeeReading(model);
       model.reading = fortuneText;
-
       await HiveHelper().coffeeReadingBox.put(key, model);
-      Logger.info('Saved fortune to Firestore', tag: 'LOOK');
 
       // Save to Firestore
       await FirestoreService.instance.addDocument('Fortunes', {
@@ -383,21 +464,26 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
         'createdAt': Timestamp.fromDate(model.createdAt),
       });
 
-      // Consume one fortune slot and update last reading time
+      // Update premium stats
       try {
+        Logger.info('Starting to increment fortune usage...', tag: 'LOOK');
         await PremiumService().incrementFortuneUsage();
+        Logger.success('✅ Fortune usage incremented', tag: 'LOOK');
+
+        Logger.info('Updating last fortune read time...', tag: 'LOOK');
         await PremiumService().updateLastFortuneReadTime();
+        Logger.success('✅ Last fortune read time updated', tag: 'LOOK');
       } catch (e) {
-        Logger.error('Failed to update fortune usage/time: $e', tag: 'LOOK');
+        Logger.error('❌ Failed to update fortune usage/time: $e', tag: 'LOOK');
       }
 
-      // Schedule notification for 5 minutes later via OneSignal
+      // Schedule notification
       try {
         await OneSignalService().scheduleDelayedNotification(
           userId: uid,
           title: 'Falınız Hazır! ✨',
           message: 'Kahve falınız bekliyorsunuz. Hemen kontrol edin!',
-          delaySeconds: 300, // 5 minutes
+          delaySeconds: 300,
         );
         Logger.info('OneSignal delayed notification scheduled', tag: 'LOOK');
       } catch (e) {
@@ -405,23 +491,19 @@ class LookViewmodel extends Bloc<LookEvent, LookState> {
           'OneSignal notification scheduling failed: $e',
           tag: 'LOOK',
         );
-        // Gracefully continue - app doesn't crash
       }
 
-      // Show toast with notification info
       ToastHelper.showSuccess('Falınız 5 dakika içinde hazır olacak! ⏳');
 
-      // Navigate to Home screen
       try {
         _appRouter.push(const HomeRoute());
         Logger.info('Navigated to home screen', tag: 'LOOK');
       } catch (e) {
         Logger.warn('Failed to navigate home: $e', tag: 'LOOK');
-        // Fallback to emit saved state if navigation fails
         emit(LookSaved(key));
       }
     } catch (e) {
-      Logger.error('Error while processing fortune: $e', tag: 'LOOK');
+      Logger.error('Background polling error: $e', tag: 'LOOK');
       ToastHelper.showError('Fal alınırken hata oluştu');
       emit(LookError(e.toString()));
     }

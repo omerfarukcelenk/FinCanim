@@ -20,7 +20,6 @@ import 'package:falcim_benim/services/firebase_auth_service.dart';
 import 'package:falcim_benim/utils/toast_helper.dart';
 import 'package:falcim_benim/utils/app_theme.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
-import 'package:falcim_benim/services/local_notification_service.dart';
 
 /// Configure Firebase Auth Emulator for local testing (debug only).
 /// This enables testing SMS OTP flow without real SMS sending or rate limits.
@@ -59,9 +58,6 @@ void main() async {
 
   // Initialize OneSignal
   await _initializeOneSignal();
-
-  // Initialize local notifications handler
-  await _initializeLocalNotifications();
 
   runApp(MyApp());
 }
@@ -141,16 +137,6 @@ Future<void> _initializeOneSignal() async {
   } catch (e) {
     Logger.error('Failed to initialize OneSignal: $e');
     // Don't fail app startup if OneSignal fails
-  }
-}
-
-Future<void> _initializeLocalNotifications() async {
-  try {
-    final localNotifications = LocalNotificationService();
-    await localNotifications.init();
-    Logger.info('Local notifications initialized');
-  } catch (e) {
-    Logger.error('Failed to initialize local notifications: $e');
   }
 }
 

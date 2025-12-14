@@ -12,7 +12,6 @@ import 'package:falcim_benim/utils/toast_helper.dart';
 import 'widgets/detail_image.dart';
 import 'widgets/detail_comment.dart';
 import 'package:falcim_benim/utils/reading_parser.dart';
-import 'widgets/detail_actions.dart';
 
 @RoutePage()
 class DetailScreen extends StatelessWidget {
@@ -103,7 +102,7 @@ class DetailScreen extends StatelessWidget {
 
                             // Tabs for categorized reading
                             DefaultTabController(
-                              length: 7,
+                              length: 8,
                               child: Expanded(
                                 child: Column(
                                   crossAxisAlignment:
@@ -133,6 +132,7 @@ class DetailScreen extends StatelessWidget {
                                             text:
                                                 '⚠️ DİKKAT EDİLMESİ GEREKENLER',
                                           ),
+                                          Tab(text: '✨ KAPANIŞ MESAJI'),
                                         ],
                                       ),
                                     ),
@@ -229,6 +229,19 @@ class DetailScreen extends StatelessWidget {
                                                 userAge: age,
                                                 categoryTitle:
                                                     '⚠️ DİKKAT EDİLMESİ GEREKENLER',
+                                              ),
+                                            ),
+                                          ),
+
+                                          // KAPANIŞ MESAJI
+                                          SingleChildScrollView(
+                                            child: Padding(
+                                              padding: EdgeInsets.all(8),
+                                              child: DetailComment(
+                                                reading: parts['kapaniş'] ?? '',
+                                                userAge: age,
+                                                categoryTitle:
+                                                    '✨ KAPANIŞ MESAJI',
                                               ),
                                             ),
                                           ),
