@@ -69,8 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
     $CACHE_DIR = __DIR__ . '/fortune_cache/';
     // Use environment variables or fallback to actual mode
     $DEVELOPMENT_MODE = getenv('DEVELOPMENT_MODE') === 'true';
-    $GEMINI_API_KEY = 'AIzaSyBHv8DNlGP-951mIfsTAiFK5C2CGEsxwx8';
-    $GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+    $GEMINI_API_KEY = '';
+    $GEMINI_API_URL = '';
     $MAX_RETRIES = 3;
     $RETRY_DELAY = 5;
 
