@@ -20,8 +20,8 @@ function logMessage($message)
 }
 
 // OneSignal Config
-$ONESIGNAL_APP_ID = '745f61ee-9edb-4224-b1af-17a49f65d84c';
-$ONESIGNAL_REST_API_KEY = 'os_v2_app_orpwd3u63nbcjmnpc6sj6zoyjql23ibnirjug6v5swyhnz3l6skitds7ueiprqdatsd2gt2pfryh24e37slg6enokegkwdckra2rxkq';
+$ONESIGNAL_APP_ID = '';
+$ONESIGNAL_REST_API_KEY = '';
 $ONESIGNAL_API_URL = 'https://onesignal.com/api/v1/notifications';
 
 logMessage("=== SCHEDULE NOTIFICATION REQUEST ===");
